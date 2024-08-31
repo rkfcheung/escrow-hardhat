@@ -1,9 +1,9 @@
-import { ethers } from 'ethers';
-import { useEffect, useState } from 'react';
-import deploy from './deploy';
-import Escrow from './Escrow';
+import { ethers } from "ethers";
+import { useEffect, useState } from "react";
+import deploy from "./deploy";
+import Escrow from "./Escrow";
 
-const provider = new ethers.providers.Web3Provider(window.ethereum);
+const provider = new ethers.providers.JsonRpcProvider("http://127.0.0.1:8545/");
 
 export async function approve(escrowContract, signer) {
   const approveTxn = await escrowContract.connect(signer).approve();
@@ -17,8 +17,7 @@ function App() {
 
   useEffect(() => {
     async function getAccounts() {
-      const accounts = await provider.send('eth_requestAccounts', []);
-
+      const accounts = await provider.listAccounts();
       setAccount(accounts[0]);
       setSigner(provider.getSigner());
     }
@@ -27,30 +26,41 @@ function App() {
   }, [account]);
 
   async function newContract() {
-    const beneficiary = document.getElementById('beneficiary').value;
-    const arbiter = document.getElementById('arbiter').value;
-    const value = ethers.BigNumber.from(document.getElementById('wei').value);
-    const escrowContract = await deploy(signer, arbiter, beneficiary, value);
+    try {
+      if (!signer) {
+        throw new Error(
+          "Signer is not available. Please ensure the local network is running."
+        );
+      }
 
+      const beneficiary = document.getElementById("beneficiary").value;
+      const arbiter = document.getElementById("arbiter").value;
+      const value = ethers.BigNumber.from(document.getElementById("wei").value);
 
-    const escrow = {
-      address: escrowContract.address,
-      arbiter,
-      beneficiary,
-      value: value.toString(),
-      handleApprove: async () => {
-        escrowContract.on('Approved', () => {
-          document.getElementById(escrowContract.address).className =
-            'complete';
-          document.getElementById(escrowContract.address).innerText =
-            "✓ It's been approved!";
-        });
+      const escrowContract = await deploy(signer, arbiter, beneficiary, value);
 
-        await approve(escrowContract, signer);
-      },
-    };
+      const escrow = {
+        address: escrowContract.address,
+        arbiter,
+        beneficiary,
+        value: value.toString(),
+        approved: false,
+        handleApprove: async () => {
+          await approve(escrowContract, signer);
+          setEscrows((prevEscrows) =>
+            prevEscrows.map((e) =>
+              e.address === escrowContract.address
+                ? { ...e, approved: true }
+                : e
+            )
+          );
+        },
+      };
 
-    setEscrows([...escrows, escrow]);
+      setEscrows((prevEscrows) => [...prevEscrows, escrow]);
+    } catch (error) {
+      console.error("Failed to deploy contract", error);
+    }
   }
 
   return (
@@ -77,7 +87,6 @@ function App() {
           id="deploy"
           onClick={(e) => {
             e.preventDefault();
-
             newContract();
           }}
         >
